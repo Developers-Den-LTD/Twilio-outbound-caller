@@ -29,6 +29,16 @@
                     <label class="block text-sm font-medium mb-1 text-gray-300">Auth Token</label>
                     <input type="password" id="token" class="w-full p-3 rounded bg-gray-700 border border-gray-600 focus:border-blue-500 focus:outline-none text-white transition-all" placeholder="Enter Token" autocomplete="current-password">
                 </div>
+                <div class="mt-4 grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1 text-gray-300">Region (Optional)</label>
+                        <input type="text" id="region" class="w-full p-3 rounded bg-gray-700 border border-gray-600 focus:border-blue-500 focus:outline-none text-white transition-all" placeholder="e.g. ie1">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1 text-gray-300">Edge (Optional)</label>
+                        <input type="text" id="edge" class="w-full p-3 rounded bg-gray-700 border border-gray-600 focus:border-blue-500 focus:outline-none text-white transition-all" placeholder="e.g. dublin">
+                    </div>
+                </div>
                 <button type="submit" id="login-btn" class="w-full py-3 mt-6 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold transition-all transform hover:scale-[1.02]">
                     Sign In
                 </button>
@@ -138,6 +148,8 @@
         async function login() {
             const sid = document.getElementById('sid').value;
             const token = document.getElementById('token').value;
+            const region = document.getElementById('region').value;
+            const edge = document.getElementById('edge').value;
             const btn = document.getElementById('login-btn');
             const err = document.getElementById('login-error');
 
@@ -148,7 +160,7 @@
             err.classList.add('hidden');
 
             try {
-                const res = await axios.post('/api/login', { sid, token });
+                const res = await axios.post('/api/login', { sid, token, region, edge });
                 populateCallerIds(res.data.numbers);
                 showCallView();
                 setupDevice();
@@ -163,15 +175,21 @@
 
         async function setupDevice() {
             setStatus('Initializing Device...');
+            const edgeInput = document.getElementById('edge') ? document.getElementById('edge').value : null;
             try {
                 const res = await axios.post('/api/token');
                 const token = res.data.token;
 
-                device = new Twilio.Device(token, {
+                const deviceOptions = {
                     codecPreferences: ['opus', 'pcmu'],
                     fakeLocalDTMF: true,
                     enableRingingState: true
-                });
+                };
+                if (edgeInput) {
+                    deviceOptions.edge = edgeInput;
+                }
+
+                device = new Twilio.Device(token, deviceOptions);
 
                 // Register the device to receive calls (even if we mainly make them)
                 device.register();

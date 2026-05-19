@@ -12,7 +12,12 @@ app.secret_key = os.urandom(24)
 # Helper to get Twilio client from session
 def get_twilio_client():
     if 'account_sid' in session and 'auth_token' in session:
-        return Client(session['account_sid'], session['auth_token'])
+        kwargs = {}
+        if session.get('region'):
+            kwargs['region'] = session.get('region')
+        if session.get('edge'):
+            kwargs['edge'] = session.get('edge')
+        return Client(session['account_sid'], session['auth_token'], **kwargs)
     return None
 
 
@@ -39,13 +44,18 @@ def login():
     data = request.json
     sid = data.get('sid')
     token = data.get('token')
+    region = data.get('region')
+    edge = data.get('edge')
 
     if not sid or not token:
         return jsonify({'error': 'Missing credentials'}), 400
 
     try:
         # Validate credentials by fetching the account
-        client = Client(sid, token)
+        kwargs = {}
+        if region: kwargs['region'] = region
+        if edge: kwargs['edge'] = edge
+        client = Client(sid, token, **kwargs)
         account = client.api.accounts(sid).fetch()
         
         if account.status == 'suspended':
@@ -61,6 +71,8 @@ def login():
         session['auth_token'] = token
         session['api_key_sid'] = new_key.sid
         session['api_key_secret'] = new_key.secret
+        session['region'] = region
+        session['edge'] = edge
         
         # Fetch incoming phone numbers (using the same client)
         numbers = client.incoming_phone_numbers.list(limit=20)
@@ -111,11 +123,16 @@ def token():
 
         # Generate Access Token using API Key
         # AccessToken(account_sid, api_key_sid, api_key_secret, ...)
+        kwargs = {}
+        if session.get('region'):
+            kwargs['region'] = session.get('region')
+            
         access_token = AccessToken(
             session['account_sid'],
             session['api_key_sid'],
             session['api_key_secret'],
-            identity='browser_user'
+            identity='browser_user',
+            **kwargs
         )
         
         # Grant Voice capability
