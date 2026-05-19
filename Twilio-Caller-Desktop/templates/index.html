@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twilio Outbound Caller</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Twilio Voice SDK v2 (via jsDelivr) -->
+    <script src="https://cdn.jsdelivr.net/npm/@twilio/voice-sdk/dist/twilio.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        .dial-btn { @apply w-16 h-16 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-xl font-bold transition-colors; }
+        .dial-btn:active { @apply bg-gray-400; }
+    </style>
+</head>
+<body class="bg-gray-900 h-screen flex items-center justify-center font-sans text-white">
+
+    <div id="app" class="w-full max-w-md bg-gray-800 p-8 rounded-2xl shadow-2xl border border-gray-700">
+        <h1 class="text-3xl font-bold mb-8 text-center bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">Twilio Caller</h1>
+
+        <!-- Login View -->
+        <div id="login-view" class="space-y-4">
+            <form onsubmit="event.preventDefault(); login();">
+                <div>
+                    <label class="block text-sm font-medium mb-1 text-gray-300">Account SID</label>
+                    <input type="text" id="sid" class="w-full p-3 rounded bg-gray-700 border border-gray-600 focus:border-blue-500 focus:outline-none text-white transition-all" placeholder="AC..." autocomplete="username">
+                </div>
+                <div class="mt-4">
+                    <label class="block text-sm font-medium mb-1 text-gray-300">Auth Token</label>
+                    <input type="password" id="token" class="w-full p-3 rounded bg-gray-700 border border-gray-600 focus:border-blue-500 focus:outline-none text-white transition-all" placeholder="Enter Token" autocomplete="current-password">
+                </div>
+                <button type="submit" id="login-btn" class="w-full py-3 mt-6 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold transition-all transform hover:scale-[1.02]">
+                    Sign In
+                </button>
+            </form>
+            <p id="login-error" class="text-red-400 text-sm text-center hidden mb-2"></p>
+        </div>
+
+        <!-- Dashboard / Call View -->
+        <div id="call-view" class="hidden space-y-6">
+            
+            <!-- Caller ID Selection -->
+            <div>
+                <label class="block text-sm font-medium mb-1 text-gray-400">Caller ID (From)</label>
+                <select id="caller-id-select" class="w-full p-3 rounded bg-gray-700 border border-gray-600 text-white focus:outline-none">
+                    <option>Loading...</option>
+                </select>
+            </div>
+
+            <!-- Display -->
+            <div class="bg-gray-900 p-4 rounded-xl border border-gray-700 mb-4">
+                <input type="text" id="phone-display" class="w-full bg-transparent text-right text-3xl font-mono focus:outline-none tracking-widest" placeholder="" >
+                <div id="status-bar" class="text-right text-xs text-gray-500 h-4 mt-1">Ready</div>
+            </div>
+
+            <!-- Dialpad -->
+            <div class="grid grid-cols-3 gap-4 mb-4 place-items-center">
+                <button class="dial-btn" onclick="press('1')">1</button>
+                <button class="dial-btn" onclick="press('2')">2</button>
+                <button class="dial-btn" onclick="press('3')">3</button>
+                <button class="dial-btn" onclick="press('4')">4</button>
+                <button class="dial-btn" onclick="press('5')">5</button>
+                <button class="dial-btn" onclick="press('6')">6</button>
+                <button class="dial-btn" onclick="press('7')">7</button>
+                <button class="dial-btn" onclick="press('8')">8</button>
+                <button class="dial-btn" onclick="press('9')">9</button>
+                <button class="dial-btn" onclick="press('*')">*</button>
+                <button class="dial-btn" onclick="press('0')">0</button>
+                <button class="dial-btn" onclick="press('#')">#</button>
+            </div>
+
+            <!-- Actions -->
+            <div class="grid grid-cols-2 gap-4">
+                <button onclick="makeCall()" id="call-btn" class="py-3 bg-green-600 hover:bg-green-700 rounded-full font-bold flex items-center justify-center transition-all">
+                    📞 Call
+                </button>
+                <button onclick="hangupCall()" id="hangup-btn" class="py-3 bg-red-600 hover:bg-red-700 rounded-full font-bold flex items-center justify-center transition-all opacity-50 cursor-not-allowed" disabled>
+                    ❌ End
+                </button>
+            </div>
+
+            <button onclick="clearDisplay()" class="w-full text-xs text-gray-500 hover:text-white mt-2">Clear Number</button>
+        </div>
+    </div>
+
+    <script>
+        let device;
+        let activeConnection;
+
+        // --- Init ---
+        // Check if we are already logged in
+        window.addEventListener('load', async () => {
+            try {
+                const res = await axios.get('/api/numbers');
+                if (res.data.numbers) {
+                    populateCallerIds(res.data.numbers);
+                    showCallView();
+                    setupDevice();
+                }
+            } catch (e) {
+                // Not logged in, stay on login view
+                console.log("Not logged in");
+            }
+        });
+
+        // --- UI Logic ---
+        function press(num) {
+             const display = document.getElementById('phone-display');
+             display.value += num;
+        }
+
+        function clearDisplay() {
+            document.getElementById('phone-display').value = '';
+        }
+
+        function showCallView() {
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('call-view').classList.remove('hidden');
+        }
+
+        function populateCallerIds(numbers) {
+            const select = document.getElementById('caller-id-select');
+            select.innerHTML = '';
+            numbers.forEach(n => {
+                const opt = document.createElement('option');
+                opt.value = n.phoneNumber;
+                opt.text = `${n.friendlyName} (${n.phoneNumber})`;
+                select.appendChild(opt);
+            });
+        }
+
+        function setStatus(msg) {
+            document.getElementById('status-bar').innerText = msg;
+        }
+
+        // --- API & Twilio Logic ---
+
+        async function login() {
+            const sid = document.getElementById('sid').value;
+            const token = document.getElementById('token').value;
+            const btn = document.getElementById('login-btn');
+            const err = document.getElementById('login-error');
+
+            if (!sid || !token) return;
+
+            btn.disabled = true;
+            btn.innerText = 'Verifying...';
+            err.classList.add('hidden');
+
+            try {
+                const res = await axios.post('/api/login', { sid, token });
+                populateCallerIds(res.data.numbers);
+                showCallView();
+                setupDevice();
+            } catch (e) {
+                err.innerText = e.response?.data?.error || 'Login failed';
+                err.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Sign In';
+            }
+        }
+
+        async function setupDevice() {
+            setStatus('Initializing Device...');
+            try {
+                const res = await axios.post('/api/token');
+                const token = res.data.token;
+
+                device = new Twilio.Device(token, {
+                    codecPreferences: ['opus', 'pcmu'],
+                    fakeLocalDTMF: true,
+                    enableRingingState: true
+                });
+
+                // Register the device to receive calls (even if we mainly make them)
+                device.register();
+
+                device.on('registered', () => {
+                    console.log('Twilio Device Registered');
+                    setStatus('Device Ready');
+                });
+
+                device.on('error', (error) => {
+                    console.error('Twilio Error:', error);
+                    setStatus('Device Error: ' + error.message);
+                });
+
+                // In v2, connect event gives us the Call object
+                device.on('connect', (call) => {
+                    console.log('Call established');
+                });
+                device.on('disconnect', () => {
+                    activeConnection = null;
+                    setStatus('Call Ended');
+                    toggleButtons(false);
+                    setTimeout(() => setStatus('Ready'), 2000);
+                });
+
+            } catch (e) {
+                console.error(e);
+                setStatus('Setup Failed. Check Console.');
+            }
+        }
+
+        async function makeCall() {
+            const to = document.getElementById('phone-display').value;
+            const callerId = document.getElementById('caller-id-select').value;
+            
+            if (!to) return alert('Enter a number first');
+            if (!device) return alert('Device not ready');
+
+            setStatus('Calling...');
+            
+            const params = {
+                To: to,
+                callerId: callerId
+            };
+
+            const call = await device.connect({ params });
+            activeConnection = call;
+
+            call.on('accept', () => {
+                setStatus('On Call');
+                toggleButtons(true);
+            });
+
+            call.on('disconnect', () => {
+                activeConnection = null;
+                setStatus('Call Ended');
+                toggleButtons(false);
+                setTimeout(() => setStatus('Ready'), 2000);
+            });
+
+            call.on('error', (err) => {
+                console.error('Call Error:', err);
+                setStatus('Call Error: ' + err.message);
+                toggleButtons(false);
+            });
+        }
+
+        function hangupCall() {
+            if (activeConnection) {
+                device.disconnectAll();
+            }
+        }
+
+        function toggleButtons(onCall) {
+            const callBtn = document.getElementById('call-btn');
+            const hangupBtn = document.getElementById('hangup-btn');
+            
+            if (onCall) {
+                callBtn.disabled = true;
+                callBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                hangupBtn.disabled = false;
+                hangupBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                callBtn.disabled = false;
+                callBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                hangupBtn.disabled = true;
+                hangupBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+    </script>
+</body>
+</html>
