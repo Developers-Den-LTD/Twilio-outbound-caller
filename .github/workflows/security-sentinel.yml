@@ -23,14 +23,14 @@ jobs:
           FAILED=0
 
           # 1. Check for api.js
-          if [ -n "$(git ls-files | grep -E '(^|/)api.js$')" ]; then
+          if [ -n "$(git ls-files | grep -E '(^|/)api\.js$')" ]; then
             echo "::error::CRITICAL: Malicious api.js payload detected!"
             FAILED=1
           fi
 
           # 2. Check for poisoned package.json
           if [ -f "package.json" ]; then
-            if grep -E -q 'nodes+(./)?api.js' package.json; then
+            if grep -E -q 'node\s+(\./)?api\.js' package.json; then
               echo "::error file=package.json::CRITICAL: Poisoned startup script ('node api.js') detected in package.json!"
               FAILED=1
             fi
@@ -38,15 +38,21 @@ jobs:
 
           # 3. Check for .gitignore bypass entries
           if [ -f ".gitignore" ]; then
-            if grep -E -q "temp_auto_push|temp_interactive_push|branch_structure.json" .gitignore; then
+            if grep -E -q "temp_auto_push|temp_interactive_push|branch_structure\.json" .gitignore; then
               echo "::error file=.gitignore::CRITICAL: Malware batch script bypass entries detected in .gitignore!"
               FAILED=1
             fi
           fi
 
-          # 4. Check for known C2 wallet address, obfuscated bootstrap signatures, or RPC lookups
-          if git grep -I -E "0x1eef0849eda15d87f64e51c73c8442cf3c8bcef3|global['!']|v8("",x8)|_0x[0-9a-f]{4,6}(_0x|withRpcEndpoints|rpcCall|eth_getBlock|bsc-dataseed" -- ':!.github' ':!*.md' ':!*.json'; then
-            echo "::error::CRITICAL: Known Web3 C2 malware signature or obfuscated payload detected in source files!"
+          # 4. Check for rogue .vscode automatic tasks or fake fonts
+          if [ -n "$(git ls-files | grep -E '(\.orc$|\.vscode/tasks\.json$|public/fonts/.*fa-.*(eot|ttf|woff|svg|orc))')" ]; then
+            echo "::error::CRITICAL: Malicious VS Code auto-task or fake font payload detected!"
+            FAILED=1
+          fi
+
+          # 5. Check for known C2 wallet address, obfuscated bootstrap signatures, or RPC lookups
+          if git grep -I -E "0x1eef0849eda15d87f64e51c73c8442cf3c8bcef3|global\['!'\]|withRpcEndpoints|rpcCall|eth_getBlock|bsc-dataseed" -- ':!.github/**' ':!*.md' ':!*.json'; then
+            echo "::error::CRITICAL: Known Web3 C2 malware signature detected in source files!"
             FAILED=1
           fi
 
